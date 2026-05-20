@@ -41,13 +41,13 @@ async function run() {
         const carCollection = db.collection("cars");
         const bookingCollection = db.collection("bookings");
 
-        // Auth
         app.post('/jwt', async (req, res) => {
             const token = jwt.sign(req.body, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '10h' });
             res.send({ token });
         });
 
-        // --- Cars CRUD ---
+        // --- Cars CRUD (সব জায়গায় /cars ব্যবহার করা হয়েছে) ---
+        
         app.get('/cars', async (req, res) => {
             const { search, filter } = req.query;
             let query = {};
@@ -56,10 +56,16 @@ async function run() {
             res.send(await carCollection.find(query).toArray());
         });
 
-        // আইডি দিয়ে গাড়ি আনা (বানান: /cars/:id) 👈
+        // আইডি দিয়ে গাড়ি আনা (বানান: /cars/:id)
         app.get('/cars/:id', async (req, res) => {
-            const id = req.params.id;
-            res.send(await carCollection.findOne({ _id: new ObjectId(id) }));
+            try {
+                const id = req.params.id;
+                const result = await carCollection.findOne({ _id: new ObjectId(id) });
+                if (!result) return res.status(404).send({ message: "Not found" });
+                res.send(result);
+            } catch (err) {
+                res.status(400).send({ message: "Invalid ID format" });
+            }
         });
 
         app.post('/cars', verifyToken, async (req, res) => {
@@ -70,19 +76,16 @@ async function run() {
             res.send(await carCollection.find({ ownerEmail: req.params.email }).toArray());
         });
 
-        // আপডেট (বানান: /cars/:id) 👈
         app.put('/cars/:id', verifyToken, async (req, res) => {
             const filter = { _id: new ObjectId(req.params.id) };
-            const updatedDoc = { $set: req.body };
-            res.send(await carCollection.updateOne(filter, updatedDoc));
+            res.send(await carCollection.updateOne(filter, { $set: req.body }));
         });
 
-        // ডিলিট (বানান: /cars/:id) 👈
         app.delete('/cars/:id', verifyToken, async (req, res) => {
             res.send(await carCollection.deleteOne({ _id: new ObjectId(req.params.id) }));
         });
 
-        // Bookings
+        // --- Bookings ---
         app.post('/bookings', verifyToken, async (req, res) => {
             const result = await bookingCollection.insertOne(req.body);
             await carCollection.updateOne({ _id: new ObjectId(req.body.carId) }, { $inc: { booking_count: 1 } });
@@ -97,5 +100,5 @@ async function run() {
     } finally {}
 }
 run().catch(console.dir);
-app.get('/', (req, res) => res.send('DriveFleet API Active'));
+app.get('/', (req, res) => res.send('API Running'));
 app.listen(port, () => console.log(`Server: ${port}`));
