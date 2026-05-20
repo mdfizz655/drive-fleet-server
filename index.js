@@ -1,48 +1,39 @@
 const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
-const cookieParser = require('cookie-parser');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 require('dotenv').config();
 
 const app = express();
 const port = process.env.PORT || 8000;
 
-// --- 1. Dynamic CORS Setup (সব ভার্সেল লিঙ্ক কাজ করবে) ---
+// --- 1. Middleware ---
 app.use(cors({
-    origin: function (origin, callback) {
-        if (!origin || origin.includes('vercel.app') || origin.includes('localhost')) {
-            callback(null, true);
-        } else {
-            callback(new Error('Not allowed by CORS'));
-        }
-    },
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+    origin: [
+        'http://localhost:5173',
+        'https://drive-fleet-client-sq3c.vercel.app',
+        'https://drive-fleet-client-kuwbr0v8r-mdfizz655s-projects.vercel.app'
+    ],
+    credentials: true
 }));
-
 app.use(express.json());
-app.use(cookieParser());
 
 // --- 2. MongoDB Connection ---
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.u6o9fcg.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
-
 const client = new MongoClient(uri, {
     serverApi: { version: ServerApiVersion.v1, strict: true, deprecationErrors: true }
 });
 
-// --- 3. Verify Token Middleware with Logs ---
+// --- 3. Verify Token Middleware (Header Based) ---
 const verifyToken = (req, res, next) => {
-    const token = req?.cookies?.token;
-    console.log('--- Token Check ---', token ? "Token Found" : "No Token in Cookie");
-
-    if (!token) {
-        return res.status(401).send({ message: 'Unauthorized: No token' });
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+        return res.status(401).send({ message: 'Unauthorized access' });
     }
+    const token = authHeader.split(' ')[1]; // Bearer <token>
     jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
         if (err) {
-            console.log('JWT Error:', err.message);
-            return res.status(401).send({ message: 'Unauthorized: Invalid token' });
+            return res.status(401).send({ message: 'Unauthorized access' });
         }
         req.user = decoded;
         next();
@@ -55,30 +46,14 @@ async function run() {
         const carCollection = db.collection("cars");
         const bookingCollection = db.collection("bookings");
 
-        // --- Auth APIs ---
+        // Auth API - সরাসরি টোকেন পাঠিয়ে দিবে
         app.post('/jwt', async (req, res) => {
             const user = req.body;
             const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '10h' });
-
-            res.cookie('token', token, {
-                httpOnly: true,
-                secure: true,      
-                sameSite: 'none',
-                maxAge: 36000000, 
-                path: '/'
-            }).send({ success: true });
+            res.send({ token });
         });
 
-        app.post('/logout', (req, res) => {
-            res.clearCookie('token', {
-                httpOnly: true,
-                secure: true,
-                sameSite: 'none',
-                path: '/'
-            }).send({ success: true });
-        });
-
-        // --- Cars CRUD APIs ---
+        // --- Cars APIs ---
         app.get('/cars', async (req, res) => {
             const { search, filter } = req.query;
             let query = {};
@@ -123,9 +98,9 @@ async function run() {
             res.send(await bookingCollection.find({ userEmail: req.params.email }).toArray());
         });
 
-        console.log("MongoDB Connected!");
+        console.log("Successfully connected to MongoDB!");
     } finally {}
 }
 run().catch(console.dir);
-app.get('/', (req, res) => res.send('DriveFleet Active'));
-app.listen(port, () => console.log(`Running on port: ${port}`));
+app.get('/', (req, res) => res.send('DriveFleet API Active'));
+app.listen(port, () => console.log(`Server port: ${port}`));
