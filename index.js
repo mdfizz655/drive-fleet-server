@@ -13,7 +13,7 @@ app.use(cors({
     origin: [
         'http://localhost:5173',
         'https://drive-fleet-client-sq3c.vercel.app',
-        'https://drive-fleet-client-kuwbr0v8r-mdfizz655s-projects.vercel.app' // তোমার সব ভার্সেল লিঙ্ক এখানে থাকবে
+        'https://drive-fleet-client-kuwbr0v8r-mdfizz655s-projects.vercel.app'
     ],
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
@@ -37,11 +37,11 @@ const client = new MongoClient(uri, {
 const verifyToken = (req, res, next) => {
     const token = req?.cookies?.token;
     if (!token) {
-        return res.status(401).send({ message: 'Unauthorized: No token provided' });
+        return res.status(401).send({ message: 'Unauthorized access: No token' });
     }
     jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
         if (err) {
-            return res.status(401).send({ message: 'Unauthorized: Invalid token' });
+            return res.status(401).send({ message: 'Unauthorized access: Invalid token' });
         }
         req.user = decoded;
         next();
@@ -54,15 +54,17 @@ async function run() {
         const carCollection = db.collection("cars");
         const bookingCollection = db.collection("bookings");
 
-        // --- 4. Auth & JWT (Production Optimized) ---
+        // --- 4. Auth & JWT ---
         app.post('/jwt', async (req, res) => {
             const user = req.body;
             const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '5h' });
 
             res.cookie('token', token, {
                 httpOnly: true,
-                secure: true,      // লাইভ সাইটে এটি অবশ্যই true হবে
-                sameSite: 'none',  // আলাদা ডোমেইনের জন্য এটি none হবে
+                secure: true,      // প্রোডাকশনে এটি অবশ্যই true
+                sameSite: 'none',  // আলাদা ডোমেইনের জন্য এটি none
+                maxAge: 3600000 * 5, 
+                path: '/'
             }).send({ success: true });
         });
 
@@ -71,12 +73,11 @@ async function run() {
                 httpOnly: true,
                 secure: true,
                 sameSite: 'none',
+                path: '/'
             }).send({ success: true });
         });
 
-        // --- 5. CARS APIs (CRUD) ---
-
-        // সব গাড়ি আনা (Search & Filter সহ)
+        // --- 5. Cars APIs ---
         app.get('/cars', async (req, res) => {
             const { search, filter } = req.query;
             let query = {};
@@ -86,40 +87,31 @@ async function run() {
             res.send(result);
         });
 
-        // সিঙ্গেল গাড়ি আনা
         app.get('/car/:id', async (req, res) => {
             const id = req.params.id;
             const result = await carCollection.findOne({ _id: new ObjectId(id) });
             res.send(result);
         });
 
-        // নতুন গাড়ি অ্যাড করা (Private)
         app.post('/cars', verifyToken, async (req, res) => {
-            const carData = req.body;
-            const result = await carCollection.insertOne(carData);
+            const result = await carCollection.insertOne(req.body);
             res.send(result);
         });
 
-        // নিজের গাড়ি দেখা (Private)
         app.get('/my-cars/:email', verifyToken, async (req, res) => {
-            const email = req.params.email;
-            if (req.user.email !== email) return res.status(403).send({ message: 'Forbidden' });
-            const result = await carCollection.find({ ownerEmail: email }).toArray();
+            if (req.user.email !== req.params.email) return res.status(403).send({ message: 'Forbidden' });
+            const result = await carCollection.find({ ownerEmail: req.params.email }).toArray();
             res.send(result);
         });
 
-        // গাড়ি আপডেট (Private)
         app.put('/car/:id', verifyToken, async (req, res) => {
             const id = req.params.id;
-            const updateDoc = { $set: req.body };
-            const result = await carCollection.updateOne({ _id: new ObjectId(id) }, updateDoc);
+            const result = await carCollection.updateOne({ _id: new ObjectId(id) }, { $set: req.body });
             res.send(result);
         });
 
-        // গাড়ি ডিলিট (Private)
         app.delete('/car/:id', verifyToken, async (req, res) => {
-            const id = req.params.id;
-            const result = await carCollection.deleteOne({ _id: new ObjectId(id) });
+            const result = await carCollection.deleteOne({ _id: new ObjectId(req.params.id) });
             res.send(result);
         });
 
@@ -127,7 +119,8 @@ async function run() {
         app.post('/bookings', verifyToken, async (req, res) => {
             const bookingData = req.body;
             const result = await bookingCollection.insertOne(bookingData);
-            // $inc ব্যবহার করে booking_count বাড়ানো
+            
+            // রিকোয়ারমেন্ট: booking_count ১ বাড়ানো
             await carCollection.updateOne(
                 { _id: new ObjectId(bookingData.carId) },
                 { $inc: { booking_count: 1 } }
@@ -136,6 +129,7 @@ async function run() {
         });
 
         app.get('/my-bookings/:email', verifyToken, async (req, res) => {
+            if (req.user.email !== req.params.email) return res.status(403).send({ message: 'Forbidden' });
             const result = await bookingCollection.find({ userEmail: req.params.email }).toArray();
             res.send(result);
         });
@@ -144,11 +138,5 @@ async function run() {
     } finally {}
 }
 run().catch(console.dir);
-
-app.get('/', (req, res) => {
-    res.send('DriveFleet Production Server is Running...');
-});
-
-app.listen(port, () => {
-    console.log(`Server is running on port: ${port}`);
-});
+app.get('/', (req, res) => res.send('DriveFleet API is Running...'));
+app.listen(port, () => console.log(`Server port: ${port}`));
