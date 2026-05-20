@@ -11,7 +11,10 @@ const port = process.env.PORT || 8000;
 
 // --- 1. Middleware ---
 app.use(cors({
-    origin: ['https://drive-fleet-client-sq3c.vercel.app'],
+    origin: [
+  'http://localhost:5173', 
+  'https://drive-fleet-client-sq3c.vercel.app'
+],
     credentials: true
 }));
 app.use(express.json());
