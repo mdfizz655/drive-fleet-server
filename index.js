@@ -7,8 +7,13 @@ require('dotenv').config();
 const app = express();
 const port = process.env.PORT || 8000;
 
+// ১. CORS সেটিংস
 app.use(cors({
-    origin: ['http://localhost:5173', 'https://drive-fleet-client-sq3c.vercel.app', 'https://drive-fleet-client-kuwbr0v8r-mdfizz655s-projects.vercel.app'],
+    origin: [
+        'http://localhost:5173',
+        'https://drive-fleet-client-sq3c.vercel.app',
+        'https://drive-fleet-client-kuwbr0v8r-mdfizz655s-projects.vercel.app'
+    ],
     credentials: true
 }));
 app.use(express.json());
@@ -16,15 +21,16 @@ app.use(express.json());
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.u6o9fcg.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 const client = new MongoClient(uri, { serverApi: { version: ServerApiVersion.v1, strict: true, deprecationErrors: true } });
 
-// --- হেডার থেকে টোকেন চেক করার মিডলওয়্যার ---
+// ২. VerifyToken (এটি এখন হেডার থেকে টোকেন নিবে)
 const verifyToken = (req, res, next) => {
     const token = req.headers.authorization?.split(' ')[1];
-    console.log('Token inside verifyToken:', token ? "Received" : "Not Found");
-
-    if (!token) return res.status(401).send({ message: 'unauthorized access' });
-
+    if (!token) {
+        return res.status(401).send({ message: 'unauthorized access' });
+    }
     jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
-        if (err) return res.status(401).send({ message: 'unauthorized access' });
+        if (err) {
+            return res.status(401).send({ message: 'unauthorized access' });
+        }
         req.user = decoded;
         next();
     });
@@ -36,10 +42,11 @@ async function run() {
         const carCollection = db.collection("cars");
         const bookingCollection = db.collection("bookings");
 
+        // টোকেন জেনারেট এপিআই
         app.post('/jwt', async (req, res) => {
             const user = req.body;
             const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '10h' });
-            res.send({ token }); // সরাসরি টোকেন পাঠিয়ে দাও
+            res.send({ token }); // সরাসরি টোকেন বডিতে পাঠিয়ে দেওয়া
         });
 
         app.get('/cars', async (req, res) => {
@@ -77,5 +84,5 @@ async function run() {
     } finally {}
 }
 run().catch(console.dir);
-app.get('/', (req, res) => res.send('API Running'));
+app.get('/', (req, res) => res.send('API Active'));
 app.listen(port, () => console.log(`Server: ${port}`));
